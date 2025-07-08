@@ -73,4 +73,3 @@ get_os_info
 get_uptime
 get_kernel_version
 # Network info
-
