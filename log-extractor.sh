@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# Define error patterns (case-insensitive)
 PATTERNS="error|fail|crit|alert|emerg|panic"
 
-# Find readable log files (skip compressed ones)
 LOGFILES=$(find /var/log -type f \( -name "*.log" -o -name "*.out" -o -name "*.log.1" \) 2>/dev/null | grep -vE "\.gz$|\.xz$")
 
 for LOG in $LOGFILES; do
