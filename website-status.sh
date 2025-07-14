@@ -3,10 +3,10 @@
 # Task 9: Website status checker
 
 WEBSITES=(
-    "https://www.google.com"
-    "https://www.github.com"
-    "https://www.stackoverflow.com"
-    "https://www.python.org"
+    "www.google.com"
+    "www.github.com"
+    "www.stackoverflow.com"
+    "www.python.org"
 )
 
 LOGFILE="website_status.log"
@@ -29,18 +29,34 @@ ping_sites() {
     done
 }
 
+track_redirects() {
+    local SITE=$1
+    local TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    echo "$TIMESTAMP - Redirect path for $SITE:" >> "$LOGFILE"
+
+    # Capture redirect headers
+    curl -s -L -o /dev/null -w "%{url_effective}" -D - "https://$SITE" |
+    grep -i "^Location:" >> "$LOGFILE"
+
+    FINAL_URL=$(curl -s -L -o /dev/null -w "%{url_effective}" "https://$SITE")
+    echo "$TIMESTAMP - Final destination: $FINAL_URL" >> "$LOGFILE"
+    echo "" >> "$LOGFILE"
+}
+
 # Curl check
 curl_sites() {
     for SITE in "${WEBSITES[@]}"; do
-        STATUS=$(curl -o /dev/null -s -w "%{http_code}" "$SITE")
+        STATUS=$(curl -L -o /dev/null -s -w "%{http_code}" "https://$SITE")
         TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
 
-        if [ "$STATUS" -ne 200 ]; then
+        if [[ "$STATUS" -ne 200 ]]; then
             echo "$TIMESTAMP - $SITE is down (HTTP status: $STATUS)" >> "$LOGFILE"
             FAILED_SITES+=("$SITE")
         else
             echo "$TIMESTAMP - $SITE is up (HTTP status: $STATUS)" >> "$LOGFILE"
         fi
+
+        track_redirects "$SITE"
     done
 }
 
@@ -60,4 +76,4 @@ email_notification() {
 
 ping_sites
 curl_sites
-email_notification
+#email_notification
