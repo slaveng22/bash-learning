@@ -73,3 +73,101 @@ get_os_info
 get_uptime
 get_kernel_version
 # Network info
+
+# Get the primary network interface (excluding loopback)
+INTERFACE=$(ip route | grep '^default' | awk '{print $5}')
+
+# Get the IP address and subnet mask
+IP_INFO=$(ip -o -f inet addr show "$INTERFACE")
+IP_ADDRESS=$(echo "$IP_INFO" | awk '{print $4}' | cut -d/ -f1)
+SUBNET_CIDR=$(echo "$IP_INFO" | awk '{print $4}' | cut -d/ -f2)
+
+# Convert CIDR to subnet mask
+CIDR2MASK() {
+  local i mask=""
+  local full_octets=$((SUBNET_CIDR / 8))
+  local remaining_bits=$((SUBNET_CIDR % 8))
+
+  for ((i = 0; i < 4; i++)); do
+    if [ $i -lt $full_octets ]; then
+      mask+="255"
+    elif [ $i -eq $full_octets ]; then
+      mask+=$((256 - 2 ** (8 - remaining_bits)))
+    else
+      mask+="0"
+    fi
+    [ $i -lt 3 ] && mask+="."
+  done
+  echo "$mask"
+}
+
+SUBNET_MASK=$(CIDR2MASK)
+
+# Get the default gateway
+GATEWAY=$(ip route | grep '^default' | awk '{print $3}')
+
+# Print results
+echo "Interface     : $INTERFACE"
+echo "IP Address    : $IP_ADDRESS"
+echo "Subnet Mask   : $SUBNET_MASK"
+echo "Default Gateway: $GATEWAY"
+
+# Monitor
+
+INTERVAL=1
+
+# Trap Ctrl+C and restore terminal
+trap "tput cnorm; clear; exit" INT
+
+tput civis # Hide cursor
+
+# Get initial byte counts
+declare -A RX1 TX1
+for IFACE in /sys/class/net/*; do
+  IF=$(basename "$IFACE")
+  RX1["$IF"]=$(<"$IFACE/statistics/rx_bytes")
+  TX1["$IF"]=$(<"$IFACE/statistics/tx_bytes")
+done
+
+while true; do
+  clear
+  echo "===== LIVE SYSTEM MONITOR ====="
+  echo "Time: $(date)"
+  echo
+
+  echo "--- CPU Load ---"
+  uptime | awk -F'load average:' '{ print "Load average (1/5/15 min):" $2 }'
+
+  echo
+  echo "--- Memory Usage ---"
+  free -h | awk 'NR==1 || /Mem|Swap/'
+
+  echo
+  echo "--- Disk Usage (/ only) ---"
+  df -h / | awk 'NR==1 || NR==2'
+
+  echo
+  echo "--- Network I/O (per interface) ---"
+  for IFACE in /sys/class/net/*; do
+    IF=$(basename "$IFACE")
+    RX2=$(<"$IFACE/statistics/rx_bytes")
+    TX2=$(<"$IFACE/statistics/tx_bytes")
+
+    RX_RATE=$(((RX2 - RX1[$IF]) / INTERVAL))
+    TX_RATE=$(((TX2 - TX1[$IF]) / INTERVAL))
+
+    RX1[$IF]=$RX2
+    TX1[$IF]=$TX2
+
+    # Skip interfaces with no traffic (optional)
+    if [[ $RX_RATE -eq 0 && $TX_RATE -eq 0 ]]; then
+      continue
+    fi
+
+    echo "$IF: ↓ $((RX_RATE / 1024)) KB/s | ↑ $((TX_RATE / 1024)) KB/s"
+  done
+
+  echo
+  echo "Press Ctrl+C to exit."
+  sleep $INTERVAL
+done
