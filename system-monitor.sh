@@ -4,170 +4,105 @@
 # Task 4: Create a menu-driven script that performs system health checks.
 # Script: system-monitor.sh
 # Description: A simple, real-time monitoring script for Linux
-# It displays Hardware info, Network info, Kernel version, Uptime, OS info, Inodes, SWAP, Running services, CPU, Memory and Disk Usage
 
 set -euo pipefail
+trap 'error "Script failed on line $LINENO with exit code $?"' ERR
 
-#--- Configuration ---
-REFRESH_INTERVAL=2
-#--- Colors ---
-GREEN='\e[32m'
-RED='\e[31m'
-YELLOW='\e[33m'
-CYAN='\e[36m'
-NC='\e[0m' # No Color
+# Logging colors
+GREEN='\033[1;32m'
+CYAN='\033[1;36m'
+BLUE='\033[1;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-#--- Functions ---
+info() { echo -e "${CYAN}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[OK]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+prompt() { echo -ne "${BLUE}[PROMPT]${NC} $1"; }
 
-# CPU info
-
-get_cpu_info() {
-
-  CPU=$(lscpu | awk -F: '$1 ~ /^Model name$/ {print $2; exit}' | xargs)
-  echo -e "${GREEN}---CPU Model---${NC}: $CPU"
-
+check_not_root() {
+  if [[ $EUID -eq 0 ]]; then
+    error "This script should not be run as root. Please run as a regular user with sudo access."
+    exit 1
+  fi
 }
 
-get_ram_model() {
-
-  RAM=$(lshw -class memory | grep -i "product" | head -1 | awk -F: '{print $2}' | xargs)
-  echo -e "${GREEN}---RAM Model---${NC}: $RAM"
-
-}
-
-get_wirless_card() {
-
-  WIRELESS=$(lspci | grep -i 'wireless' | cut -d ':' -f3- | xargs)
-  echo -e "${GREEN}---Wirless Card Model---${NC}: $WIRELESS"
-
-}
-
-get_ethernet_card() {
-
-  ETHERNET=$(lspci | grep -i 'ethernet' | cut -d ':' -f3- | xargs)
-  echo -e "${GREEN}---Ethernet Card Model---${NC}: $ETHERNET"
-
-}
-
-get_os_info() {
-
-  OS=$(lsb_release -a | grep -i Description | awk -F: '{print $2}' | xargs)
-  echo -e "${GREEN}---OS info---${NC}: $OS"
-
-}
-
-get_uptime() {
-  echo -e "${GREEN}---System Uptime---${NC}: $(uptime -p)"
-}
-
-get_kernel_version() {
-  echo -e "${GREEN}---Kernel Version---${NC}: $(uname -r)"
-}
-
-get_cpu_info
-get_ethernet_card
-get_wirless_card
-get_ram_model
-echo ""
-get_os_info
-get_uptime
-get_kernel_version
-# Network info
-
-# Get the primary network interface (excluding loopback)
-INTERFACE=$(ip route | grep '^default' | awk '{print $5}')
-
-# Get the IP address and subnet mask
-IP_INFO=$(ip -o -f inet addr show "$INTERFACE")
-IP_ADDRESS=$(echo "$IP_INFO" | awk '{print $4}' | cut -d/ -f1)
-SUBNET_CIDR=$(echo "$IP_INFO" | awk '{print $4}' | cut -d/ -f2)
-
-# Convert CIDR to subnet mask
-CIDR2MASK() {
-  local i mask=""
-  local full_octets=$((SUBNET_CIDR / 8))
-  local remaining_bits=$((SUBNET_CIDR % 8))
-
-  for ((i = 0; i < 4; i++)); do
-    if [ $i -lt $full_octets ]; then
-      mask+="255"
-    elif [ $i -eq $full_octets ]; then
-      mask+=$((256 - 2 ** (8 - remaining_bits)))
-    else
-      mask+="0"
+check_sudo_access() {
+  if ! sudo -n true 2>/dev/null; then
+    warn "Sudo access required. You may be prompted for your password."
+    if ! sudo -v; then
+      error "Failed to obtain sudo access. Exiting."
+      exit 1
     fi
-    [ $i -lt 3 ] && mask+="."
-  done
-  echo "$mask"
+  fi
+  success "Sudo access confirmed"
 }
 
-SUBNET_MASK=$(CIDR2MASK)
-
-# Get the default gateway
-GATEWAY=$(ip route | grep '^default' | awk '{print $3}')
-
-# Print results
-echo "Interface     : $INTERFACE"
-echo "IP Address    : $IP_ADDRESS"
-echo "Subnet Mask   : $SUBNET_MASK"
-echo "Default Gateway: $GATEWAY"
-
-# Monitor
-
-INTERVAL=1
-
-# Trap Ctrl+C and restore terminal
-trap "tput cnorm; clear; exit" INT
-
-tput civis # Hide cursor
-
-# Get initial byte counts
-declare -A RX1 TX1
-for IFACE in /sys/class/net/*; do
-  IF=$(basename "$IFACE")
-  RX1["$IF"]=$(<"$IFACE/statistics/rx_bytes")
-  TX1["$IF"]=$(<"$IFACE/statistics/tx_bytes")
-done
-
-while true; do
+sysinfo() {
   clear
-  echo "===== LIVE SYSTEM MONITOR ====="
-  echo "Time: $(date)"
-  echo
+  echo -e "${CYAN}=========================================${NC}"
+  echo -e "${CYAN}           SYSTEM INFORMATION${NC}"
+  echo -e "${CYAN}=========================================${NC}"
 
-  echo "--- CPU Load ---"
-  uptime | awk -F'load average:' '{ print "Load average (1/5/15 min):" $2 }'
+  echo -e "${YELLOW}Hostname:${NC} ${GREEN}$(hostname)${NC}"
+  source /etc/os-release
+  echo -e "${YELLOW}OS:${NC} ${GREEN}$PRETTY_NAME${NC}"
+  echo -e "${YELLOW}Kernel:${NC} ${GREEN}$(uname -r)${NC}"
+  echo -e "${YELLOW}Architecture:${NC} ${GREEN}$(uname -m)${NC}"
+  cpu_model=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | sed 's/^ *//')
+  cpu_cores=$(nproc)
+  echo -e "${YELLOW}CPU:${NC} ${GREEN}$cpu_model ${BLUE}($cpu_cores cores)${NC}"
+  total_mem=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)" GB"}')
+  echo -e "${YELLOW}Total Memory:${NC} ${BLUE}$total_mem${NC}"
+  echo -e "${YELLOW}Current User:${NC} ${GREEN}$(whoami)${NC}"
+  echo -e "${YELLOW}Shell:${NC} ${GREEN}$SHELL${NC}"
+  echo -e "${CYAN}=========================================${NC}"
+  echo ""
+}
 
-  echo
-  echo "--- Memory Usage ---"
-  free -h | awk 'NR==1 || /Mem|Swap/'
+sysmonitor() {
+  clear
+  echo -e "${CYAN}=========================================${NC}"
+  echo -e "${CYAN}           SYSTEM MONITOR${NC}"
+  echo -e "${CYAN}=========================================${NC}"
 
-  echo
-  echo "--- Disk Usage (/ only) ---"
-  df -h / | awk 'NR==1 || NR==2'
-
-  echo
-  echo "--- Network I/O (per interface) ---"
-  for IFACE in /sys/class/net/*; do
-    IF=$(basename "$IFACE")
-    RX2=$(<"$IFACE/statistics/rx_bytes")
-    TX2=$(<"$IFACE/statistics/tx_bytes")
-
-    RX_RATE=$(((RX2 - RX1[$IF]) / INTERVAL))
-    TX_RATE=$(((TX2 - TX1[$IF]) / INTERVAL))
-
-    RX1[$IF]=$RX2
-    TX1[$IF]=$TX2
-
-    # Skip interfaces with no traffic (optional)
-    if [[ $RX_RATE -eq 0 && $TX_RATE -eq 0 ]]; then
-      continue
-    fi
-
-    echo "$IF: ↓ $((RX_RATE / 1024)) KB/s | ↑ $((TX_RATE / 1024)) KB/s"
+  while true; do
+    echo -e "${YELLOW}Time:${NC} $(date '+%Y-%m-%d %H:%M:%S')"
+    echo -e "${YELLOW}CPU Usage:${NC} $(grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {printf "%.2f%%", usage}')"
+    free -h | awk 'NR==2{printf "\033[1;33mMemory Usage:\033[0m %s/%s (%.2f%%)\n", $3,$2,($3/$2)*100}'
+    df -h | awk '$NF=="/"{printf "\033[1;33mDisk Usage:\033[0m %s/%s (%s)\n", $3,$2,$5}'
+    echo -e "${YELLOW}Top 5 Processes by CPU:${NC}"
+    ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -n 6
+    echo -e "${CYAN}=========================================${NC}"
+    sleep 2
+    clear
   done
+}
 
-  echo
-  echo "Press Ctrl+C to exit."
-  sleep $INTERVAL
-done
+menu() {
+  while true; do
+    echo -e "${GREEN}System Monitor Menu:${NC}"
+    echo "1) Show System Information"
+    echo "2) Real-Time Monitoring"
+    echo "3) Exit"
+    prompt "Choose an option [1-3]: "
+    read -r choice
+
+    case $choice in
+    1) sysinfo ;;
+    2) sysmonitor ;;
+    3)
+      success "Exiting. Goodbye!"
+      exit 0
+      ;;
+    *) warn "Invalid option. Please try again." ;;
+    esac
+  done
+}
+
+# Main execution
+check_not_root
+check_sudo_access
+menu
