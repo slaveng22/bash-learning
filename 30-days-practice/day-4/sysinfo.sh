@@ -9,7 +9,7 @@ USERSNO=$(users | xargs -n 1 | sort | uniq | wc -w)
 
 echo "System uptime: $UPTIME"
 echo
-echo "Nuber of currently logged in users is: $USERSNO"
+echo "Number of currently logged in users is: $USERSNO"
 echo
 echo "Top 5 processes by CPU usage:"
 
