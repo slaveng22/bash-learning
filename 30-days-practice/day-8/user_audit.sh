@@ -33,7 +33,7 @@ fi
 
 HOME_DIRECTORY=$(getent passwd | grep "$USER" | awk -F: '{print $(NF-1)}')
 USER_SHELL=$(getent passwd | grep "$USER" | awk -F: '{print $NF}')
-PROCESS_NO=$(ps -U "$USER" | wc -l)
+PROCESS_NO=$(ps -U "$USER" --no-headers | wc -l)
 LAST_LOGIN=$(who | awk '{print $4,$3}')
 
 echo "User: "$USER""
