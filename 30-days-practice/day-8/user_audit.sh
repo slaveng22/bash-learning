@@ -26,13 +26,13 @@ if [[ -z "$1" ]]; then
   exit 1
 fi
 
-if ! getent passwd | grep "$USER" >/dev/null; then
+if ! getent passwd "$USER" >/dev/null; then
   echo "User "$USER" doesn't exist on this system"
   exit 1
 fi
 
-HOME_DIRECTORY=$(getent passwd | grep "$USER" | awk -F: '{print $(NF-1)}')
-USER_SHELL=$(getent passwd | grep "$USER" | awk -F: '{print $NF}')
+HOME_DIRECTORY=$(getent passwd "$USER" | awk -F: '{print $(NF-1)}')
+USER_SHELL=$(getent passwd "$USER" | awk -F: '{print $NF}')
 PROCESS_NO=$(ps -U "$USER" --no-headers | wc -l)
 LAST_LOGIN=$(who | awk '{print $4,$3}')
 
