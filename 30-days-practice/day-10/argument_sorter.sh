@@ -1,4 +1,5 @@
 #!/bin/env bash
+
 # Takes any number of arguments (words or numbers).
 # If no arguments are given → print usage and exit.
 # For each argument:
@@ -39,4 +40,3 @@ done
 echo "Total arguments: $total_args"
 echo "Integers: $int_count"
 echo "Non-integers: $non_int_count"
-
