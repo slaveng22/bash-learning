@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/usr/bin/env bash
 
 # Takes any number of arguments (words or numbers).
 # If no arguments are given → print usage and exit.
